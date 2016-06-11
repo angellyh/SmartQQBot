@@ -296,8 +296,8 @@ class QQBot(object):
                 time.sleep(4)
         user_info = self.get_self_info()
         self.get_online_friends_list()
-        self.get_group_id_list()
-        self.get_group_code_list()
+        self.get_group_list_with_group_id()
+        self.get_group_list_with_group_code()
         try:
             self.username = user_info['nick']
             logger.info(
@@ -389,7 +389,6 @@ class QQBot(object):
             logger.exception("RUNTIMELOG uin_to_account fail")
             return None
 
-    # 获取自己的信息
     def get_self_info(self):
         """
         获取自己的信息, 并存入self._self_info
@@ -416,7 +415,6 @@ class QQBot(object):
                 continue
         return self._self_info
 
-    # 获取在线好友列表
     def get_online_friends_list(self):
         """
         获取在线好友列表
@@ -481,7 +479,6 @@ class QQBot(object):
             logger.warning("RUNTIMELOG get_friend_info return fail.")
             logger.debug("RUNTIMELOG now uin list:    " + str(self.friend_uin_list[uin]))
 
-    # 获取好友的签名信息
     def get_friend_longnick(self, tuin):
         """
         获取好友的签名信息
@@ -496,13 +493,11 @@ class QQBot(object):
             return {}
         return rsp_json["result"]
 
-    # 获取群列表
-    def get_group_code_list(self, group_code=None):
+    def get_group_list_with_group_code(self):
         """
         获取包含群名和group_code的列表, 并存入cache, 其中code为group_code
-        若指定group_code, 可直接查询对应群的dict
         :type group_code: str
-        :return:list or dict
+        :return:list
         [
             {
                 u 'code': 1131597161, # 这是真实group_code
@@ -575,16 +570,13 @@ class QQBot(object):
         for group in response['result']['gnamelist']:
             self.group_code_list[str(group['gid'])] = group
 
-        if group_code:
-            return self.group_code_list.get(group_code)
         return response['result']['gnamelist']
 
-    def get_group_id_list(self, group_id=None):
+    def get_group_list_with_group_id(self):
         """
         获取包含群名和群号的列表, 并存入cache, 其中gc为群号
-        若指定group_id, 可直接返回对应群的dict
         :type group_id: str
-        :return:list or dict
+        :return:list
 
         return list sample
         [
@@ -609,16 +601,14 @@ class QQBot(object):
             group_id_list = rsp_json.get('join')
             for group in group_id_list:
                 self.group_id_list[str(group['gc'])] = group
-            if group_id:
-                return self.group_id_list.get(str(group_id))
             return group_id_list
         else:
             logger.warning("get_group_list code unknown: {}".format(response))
             return None
 
-    # 通过假group_code获取真group_code
     def get_true_group_code(self, fake_group_code):
         """
+        通过假group_code获取真group_code
         :type fake_group_code: str
         :return str
         """
@@ -626,7 +616,7 @@ class QQBot(object):
         logger.debug("正在查询group_code:{}对应的真实group_code".format(fake_group_code))
         if fake_group_code not in self.group_code_list:
             logger.info("尝试更新群列表信息")
-            self.get_group_code_list()  # 先尝试更新群列表
+            self.get_group_list_with_group_code()  # 先尝试更新群列表
             if fake_group_code not in self.group_code_list:
                 logger.warning("没有所查询的group_code, 请检查group_code是否错误")
                 return 0
@@ -634,7 +624,7 @@ class QQBot(object):
 
     def get_group_info(self, group_code=None, group_id=None):
         """
-        通过group_code或者group_id(群号)获取对应群
+        通过group_code或者group_id(群号)获取对应群信息
         :type group_code: str
         :type group_id: str
         :return dict
@@ -647,8 +637,11 @@ class QQBot(object):
         if group_code or group_id:
             if group_code:
                 t_group_code = self.get_true_group_code(group_code)
-                group_code_info = self.group_code_list.get(t_group_code) or self.get_group_code_list(t_group_code)
-                group_id_list = self.get_group_id_list()
+                if t_group_code not in self.group_code_list:
+                    self.get_group_list_with_group_code()
+                group_code_info = self.group_code_list.get(t_group_code)
+
+                group_id_list = self.get_group_list_with_group_id()
                 result = {
                     'name':         group_code_info['name'],
                     'id':           "",
@@ -665,8 +658,10 @@ class QQBot(object):
                         group_name=group_code_info['name']
                     ))
             elif group_id:
-                group_id_info = self.group_id_list.get(group_id) or self.get_group_id_list(group_id)
-                group_code_list = self.get_group_code_list()
+                if group_id not in self.group_id_list:
+                    self.get_group_list_with_group_id()
+                group_id_info = self.group_id_list.get(group_id)
+                group_code_list = self.get_group_list_with_group_code()
                 result = {
                     'name': group_id_info['gn'],
                     'id': group_id_info['gc'],
@@ -685,10 +680,9 @@ class QQBot(object):
         else:
             raise KeyError("请输入group_code或group_id之一")
 
-    # 获取指定群成员信息（对于易变的信息，请在外层做缓存处理）
     def get_group_member_info_list(self, group_code):
         """
-        获取群信息
+        获取指定群的成员信息
         :group_code: int, can be "ture" of "fake" group_code
         {"retcode":0,"result":{"stats":[],"minfo":[{"nick":" 信","province":"山东","gender":"male","uin":3964575484,"country":"中国","city":""},{"nick":"崔震","province":"","gender":"unknown","uin":2081397472,"country":"","city":""},{"nick":"云端的猫","province":"山东","gender":"male","uin":3123065696,"country":"中国","city":"青岛"},{"nick":"要有光","province":"山东","gender":"male","uin":2609717081,"country":"中国","city":"青岛"},{"nick":"小莎机器人","province":"广东","gender":"female","uin":495456232,"country":"中国","city":"深圳"}],"ginfo":{"face":0,"memo":"http://hujj009.ys168.com\r\n0086+区(没0)+电话\r\n0086+手机\r\nhttp://john123951.xinwen365.net/qq/index.htm","class":395,"fingermemo":"","code":3943922314,"createtime":1079268574,"flag":16778241,"level":0,"name":"ぁQQぁ","gid":3931577475,"owner":3964575484,"members":[{"muin":3964575484,"mflag":192},{"muin":2081397472,"mflag":65},{"muin":3123065696,"mflag":128},{"muin":2609717081,"mflag":0},{"muin":495456232,"mflag":0}],"option":2},"cards":[{"muin":3964575484,"card":"●s.Εx2(22222)□"},{"muin":495456232,"card":"小莎机器人"}],"vipinfo":[{"vip_level":0,"u":3964575484,"is_vip":0},{"vip_level":0,"u":2081397472,"is_vip":0},{"vip_level":0,"u":3123065696,"is_vip":0},{"vip_level":0,"u":2609717081,"is_vip":0},{"vip_level":0,"u":495456232,"is_vip":0}]}}
         :return:dict
@@ -718,6 +712,7 @@ class QQBot(object):
 
     def get_group_member_info(self, group_code, uin):
         """
+        获取群中某一指定成员的信息
         :type group_code:   int, can be "ture" of "fake" group_code
         :type uin:  int
         :return:    dict
